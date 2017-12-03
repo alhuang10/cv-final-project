@@ -12,12 +12,14 @@ from scipy.stats import entropy
 import os
 from PIL import Image
 import time
+from skimage import io, color
 
 from wideresnet import WideResNet
 
-class Places(Dataset):
 
-    def __init__(self, data_root_path, data_paths_and_labels, transform=None):
+class ImageNet(Dataset):
+
+    def __init__(self, data_root_path, transform=None):
         """
 
         :param data_root_path: the root path of the images
@@ -25,43 +27,27 @@ class Places(Dataset):
         :param transform: data augmentation, must include ToTensor to convert to PyTorch image format
         """
         self.data_root_path = data_root_path
-        self.image_path_list = []
-        self.labels_list = []
+        self.image_list = os.listdir(data_root_path)
         self.transform = transform
 
-        with open(data_paths_and_labels, 'r') as f:
-            for line in f:
-                image_path, label = line.rstrip().split(' ')
-                self.image_path_list.append(os.path.join(self.data_root_path, image_path))
-                self.labels_list.append(int(label))
-
-                # if label is None:
-                #     self.labels_list.append(-1)  # Test set doesn't have labels
-                # else:
-                #     self.labels_list.append(int(label))
+        self.image_paths = [data_root_path + image for image in self.image_list]
 
     def __len__(self):
-        return len(self.image_path_list)
+        return len(self.image_paths)
 
     def __getitem__(self, idx):
 
-        image_path = self.image_path_list[idx]
-        # image = io.imread(image_path)  # Using skimage
-        image = Image.open(image_path)  # Using PIL
-        label = self.labels_list[idx]
+        image_path = self.image_paths[idx]
+        rgb_image = io.imread(image_path)  # Using skimage
+        # image = Image.open(image_path)  # Using PIL
+
+        lab_image = color.rgb2lab(rgb_image)
 
         if self.transform:
-            image = self.transform(image)
+            lab_image = self.transform(lab_image)
 
-        return image, label
+        return lab_image
 
-        # sample = {'image': image, 'label': label}
-        #
-        # if self.transform:
-        #     image = self.transform(sample)
-        #
-        #
-        # return sample['image'], sample['label']
 
 
 class FoxNet(nn.Module):
@@ -117,11 +103,8 @@ def train_fox(foxnet, epochs, cuda_available):
     channel_std = torch.ones(3)
 
     train_data_transform = Compose([
-        RandomCrop(112),
-        RandomHorizontalFlip(),
-        ToTensor(),
-        Normalize(channel_mean, channel_std),
-        ColorAugmentation(112)
+        Resize(256),
+        ToTensor()
     ])
 
     val_data_transform = Compose([
