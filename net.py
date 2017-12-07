@@ -24,6 +24,12 @@ from skimage import io, color
 
 from wideresnet import WideResNet
 
+with open('ab2bin.p', 'rb') as f:
+    ab2bin = pickle.load(f)
+with open('bin_counts.p', 'rb') as f:
+    bin_counts = pickle.load(f)
+with open('bin_probs.p', 'rb') as f:
+    bin_probs = pickle.load(f)
 
 def pil_to_tensor(pic):
     """Convert a ``PIL Image`` or ``numpy.ndarray`` to tensor.
@@ -98,11 +104,6 @@ class ImageNet(Dataset):
 
         self.image_paths = [data_root_path + image for image in self.image_list]
 
-
-        with open('ab2bin.p', 'rb') as f:
-            self.ab2bin = pickle.load(f)
-
-
     def __len__(self):
         return len(self.image_paths)
 
@@ -127,7 +128,7 @@ class ImageNet(Dataset):
         for i in range(256):
             for j in range(256):
 
-                output_vector = test_func(ab_portion_image[0,i,j], ab_portion_image[1,i,j], self.ab2bin)
+                output_vector = test_func(ab_portion_image[0,i,j], ab_portion_image[1,i,j], ab2bin)
                 ground_truth_encoding[:, i, j] = output_vector
 
 
@@ -204,13 +205,6 @@ def bin_prestige():
 
 def get_weight_vector():
 
-    with open('ab2bin.p', 'rb') as f:
-        ab2bin = pickle.load(f)
-    with open('bin_counts.p', 'rb') as f:
-        bin_counts = pickle.load(f)
-    with open('bin_probs.p', 'rb') as f:
-        bin_probs = pickle.load(f)
-
     ab_to_weights = {}
     lamb = 0.5
     Q = len(bin_probs)
@@ -240,6 +234,16 @@ def get_weight_vector():
     #     pickle.dump(bin_probs_smoothed, handler)
     # with open('bin_probs_smoothed.p', 'rb') as f:
     #     bin_probs_smoothed = pickle.load(f)
+
+def get_annealed_means(z_hat, temp):
+    # softmax Q predictions given in h x w x Q numpy array
+    Q = z_hat.shape[2]
+    denom = np.sum(np.exp(np.log(z_hat)/temp),axis=2)
+    denom = np.dstack([denom] * Q) # repeat along third dimension 
+    z_annealed = (np.exp(np.log(z_hat)/temp))/denom # still h x w x Q
+
+    bins = list(ab2bin.values()) # vector of size Q
+    return np.rint(np.matmul(z_annealed,bins)) # take the mean, round to nearest bin 
 
 class SabrinaNet(nn.Module):
 
