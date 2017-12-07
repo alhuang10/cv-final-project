@@ -15,15 +15,17 @@ import pickle
 import ipdb
 import traceback
 
+import math
 import os
 from PIL import Image, ImageCms
+from scipy.ndimage import gaussian_filter1d
 import time
 from skimage import io, color
 
 from wideresnet import WideResNet
 
 
-def PIL_To_Tensor(pic):
+def pil_to_tensor(pic):
     """Convert a ``PIL Image`` or ``numpy.ndarray`` to tensor.
     See ``ToTensor`` for more details.
     Args:
@@ -68,6 +70,11 @@ def PIL_To_Tensor(pic):
 
     return img
 
+class PILToTensor(object):
+
+    def __call__(self, pic):
+
+        return pil_to_tensor(pic)
 
 class ImageNet(Dataset):
 
@@ -91,6 +98,11 @@ class ImageNet(Dataset):
 
         self.image_paths = [data_root_path + image for image in self.image_list]
 
+
+        with open('ab2bin.p', 'rb') as f:
+            self.ab2bin = pickle.load(f)
+
+
     def __len__(self):
         return len(self.image_paths)
 
@@ -107,12 +119,60 @@ class ImageNet(Dataset):
 
         # return just lightness image and full image (q-value quantized, H by W by Q, 5-hot)
 
-        return lab_image[0,:,:], lab_image
+        ab_portion_image = lab_image[1:,:,:]
+        # TODO finish labeling
+
+        ground_truth_encoding = np.zeros([310, 256, 256])
+
+        for i in range(256):
+            for j in range(256):
+
+                output_vector = test_func(ab_portion_image[0,i,j], ab_portion_image[1,i,j], self.ab2bin)
+                ground_truth_encoding[:, i, j] = output_vector
+
+
+        ground_truth_encoding = torch.FloatTensor(ground_truth_encoding)
+
+        return lab_image[0,:,:].view(1,256,256), ground_truth_encoding  # just Lightness image and ground truth soft 5-hot encoding
         # return np.asarray(lab_image)[:,:,0], np.asarray(lab_image)
 
 
-# def bin_prestige():
-if __name__=='__main__':
+    def create_soft_encoding(self, ab_tuple, ab2bin):
+        '''
+        Takes in an ab pair and returns a Q length vector with 5 closest points/bins weighted using Gaussian kernel
+        :param ab_tuple:
+        :param ab2bin: mapping from ab to bin index
+        :return:
+        '''
+        pass
+
+
+def test_func(a, b, ab2bin):
+
+    sigma = 5
+    output_vector = [0] * len(ab2bin)
+
+    distances = [((a_center, b_center),
+                  np.linalg.norm([a-a_center, b-b_center])) for (a_center, b_center) in ab2bin.keys()]
+
+    distances.sort(key=lambda x: x[1])
+
+    for i in range(5):
+
+        (a_center,b_center), distance = distances[i]
+
+        index = ab2bin[(a_center,b_center)]
+
+        # Weight using a gaussian kernel with sigma=5
+        output_vector[index] = math.exp(-1*pow(distance,2) / (2*pow(sigma,2)))
+
+    return output_vector
+
+
+v_test_func = np.vectorize(test_func)
+
+
+def bin_prestige():
 
     # Need the line: return np.asarray(lab_image)[:,:,0], np.asarray(lab_image)
     # Do not use the transform to convert to tensor
@@ -141,6 +201,45 @@ if __name__=='__main__':
 
     with open('bin_counts.p', 'wb') as handle:
         pickle.dump(bin_counts, handle)
+
+def get_weight_vector():
+
+    with open('ab2bin.p', 'rb') as f:
+        ab2bin = pickle.load(f)
+    with open('bin_counts.p', 'rb') as f:
+        bin_counts = pickle.load(f)
+    with open('bin_probs.p', 'rb') as f:
+        bin_probs = pickle.load(f)
+
+    ab_to_weights = {}
+    lamb = 0.5
+    Q = len(bin_probs)
+
+    for (a,b), p in bin_probs.items():
+        weight_value = 1/((1-lamb)*p + lamb/Q)
+
+        ab_to_weights[(a,b)] = weight_value
+
+    probability_vector = [0]*Q
+    weight_vector = [0]*Q
+
+    for (a,b), index in ab2bin.items():
+        weight_vector[index] = ab_to_weights[(a,b)]
+        probability_vector[index] = bin_probs[(a,b)]
+
+    normalization_factor = np.dot(probability_vector, weight_vector)
+
+    # Normalize so weighting factor is one on expectation
+    weight_vector = [weight/normalization_factor for weight in weight_vector]
+
+    return weight_vector
+
+    # probs = gaussian_filter1d(probs,5)
+    # bin_probs_smoothed = {bins[i]:probs[i] for i in range(len(bin_probs))}
+    # with open('bin_probs_smoothed.p','wb') as handler:
+    #     pickle.dump(bin_probs_smoothed, handler)
+    # with open('bin_probs_smoothed.p', 'rb') as f:
+    #     bin_probs_smoothed = pickle.load(f)
 
 class SabrinaNet(nn.Module):
 
@@ -198,12 +297,21 @@ class SabrinaNet(nn.Module):
             nn.BatchNorm2d(512)
         )
         self.conv7 = nn.Sequential(
-            nn.Conv2d(512, 256, kernel_size=3, stride=1, padding=17), # upsample, 64 by 64
+            nn.ConvTranspose2d(512, 256, kernel_size=4, stride=2, padding=1), # upsample, 64 by 64
             nn.ReLU(inplace=True),
             nn.Conv2d(256, 256, kernel_size=3, stride=1, padding=1),
             nn.ReLU(inplace=True),
             nn.BatchNorm2d(256)
         )
+
+        self.conv8 = nn.Conv2d(256, 310, kernel_size=3, stride=1, padding=1)
+
+
+        self.conv9 = nn.Sequential(
+            nn.ConvTranspose2d(310, 310, kernel_size=4, stride=2, padding=1), # upsample 128 by 128
+            nn.ConvTranspose2d(310, 310, kernel_size=4, stride=2, padding=1)  # upsample 256 by 256
+        )
+
 
         self.conv_layers = nn.Sequential(
             self.conv1,
@@ -224,6 +332,8 @@ class SabrinaNet(nn.Module):
         x = self.conv5(x)
         x = self.conv6(x)
         x = self.conv7(x)
+        x = self.conv8(x)
+        x = self.conv9(x)
 
         return x
 
@@ -234,4 +344,53 @@ def train_sabrina(sabrina, epochs, cuda_available):
         Resize((256,256)),
         PIL_To_Tensor()
     ])
+
+
+if __name__=='__main__':
+
+    # with open('ab2bin.p', 'rb') as f:
+    #     ab2bin = pickle.load(f)
+    #
+    # x = test_func(0,0, ab2bin)
+
+    sabrina = SabrinaNet()
+
+    train_data_transform = Compose([
+        Resize((256,256)),
+        PILToTensor()
+    ])
+
+    training_batch_size = 2
+
+    # train_images = ImageNet("ILSVRC2012_img_val/", transform=train_data_transform)
+    train_images = ImageNet("bin_test/", transform=train_data_transform)
+    trainloader = torch.utils.data.DataLoader(train_images, batch_size=training_batch_size,shuffle=False, num_workers=4)
+
+    print("Generating weight vector")
+
+    cross_entropy_weight_vector = get_weight_vector()
+    softmax = torch.nn.Softmax(dim=2)
+    bce = torch.nn.BCELoss(weight=torch.Tensor(cross_entropy_weight_vector))
+
+    print("here")
+
+    for i, data in enumerate(trainloader):
+
+        print("Loading image and ground truth")
+
+        lightness_images, ground_truth_encodings = data
+
+        lightness_images, ground_truth_encodings = Variable(lightness_images), Variable(ground_truth_encodings)
+
+        output = sabrina(lightness_images)
+
+        output = output.view(training_batch_size,310,256*256).permute(0,2,1)
+        ground_truth_encodings = ground_truth_encodings.view(training_batch_size,310,256*256).permute(0,2,1)
+
+        output = softmax(output)
+
+        loss = bce(output, ground_truth_encodings)
+
+
+
 
