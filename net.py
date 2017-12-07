@@ -369,8 +369,10 @@ if __name__=='__main__':
 
     training_batch_size = 2
 
-    # train_images = ImageNet("ILSVRC2012_img_val/", transform=train_data_transform)
-    train_images = ImageNet("bin_test/", transform=train_data_transform)
+    print("Creating DataLoader")
+
+    train_images = ImageNet("ILSVRC2012_img_val/", transform=train_data_transform)
+    # train_images = ImageNet("bin_test/", transform=train_data_transform)
     trainloader = torch.utils.data.DataLoader(train_images, batch_size=training_batch_size,shuffle=False, num_workers=4)
 
     print("Generating weight vector")
@@ -383,13 +385,18 @@ if __name__=='__main__':
 
     print("here")
 
+
     for i, data in enumerate(trainloader):
 
         print("Loading image and ground truth")
 
         lightness_images, ground_truth_encodings = data
 
-        lightness_images, ground_truth_encodings = Variable(lightness_images), Variable(ground_truth_encodings)
+        if use_cuda:
+            lightness_images, ground_truth_encodings \
+                = Variable(lightness_images.cuda()), Variable(ground_truth_encodings.cuda())
+        else:
+            lightness_images, ground_truth_encodings = Variable(lightness_images), Variable(ground_truth_encodings)
 
         output = sabrina(lightness_images)
 
