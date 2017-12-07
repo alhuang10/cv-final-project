@@ -367,28 +367,35 @@ if __name__=='__main__':
         PILToTensor()
     ])
 
-    training_batch_size = 2
+    training_batch_size = 4
 
     print("Creating DataLoader")
 
     train_images = ImageNet("ILSVRC2012_img_val/", transform=train_data_transform)
     # train_images = ImageNet("bin_test/", transform=train_data_transform)
-    trainloader = torch.utils.data.DataLoader(train_images, batch_size=training_batch_size,shuffle=False, num_workers=4)
+    trainloader = torch.utils.data.DataLoader(train_images, batch_size=training_batch_size,shuffle=False, num_workers=2)
 
     print("Generating weight vector")
 
     optimizer = optim.SGD(sabrina.parameters(), lr=0.01, momentum=0.9, weight_decay=0.0001)
 
     cross_entropy_weight_vector = get_weight_vector()
+    cross_entropy_weight_vector = torch.Tensor(cross_entropy_weight_vector)
+
+    if use_cuda:
+        cross_entropy_weight_vector = cross_entropy_weight_vector.cuda()
+
     softmax = torch.nn.Softmax(dim=2)
-    bce = torch.nn.BCELoss(weight=torch.Tensor(cross_entropy_weight_vector))
+    bce = torch.nn.BCELoss(weight=cross_entropy_weight_vector)
 
     print("here")
 
+    current_time = time.time()
 
     for i, data in enumerate(trainloader):
 
-        print("Loading image and ground truth")
+        print(time.time() - current_time)
+        print(i)
 
         lightness_images, ground_truth_encodings = data
 
@@ -410,7 +417,14 @@ if __name__=='__main__':
         loss = bce(output, ground_truth_encodings)
         loss.backward()
 
+        print(loss)
+
         optimizer.step()
+
+        torch.save(sabrina.state_dict(), "sabrina_model_weights_{num}".format(num=i))
+
+
+
 
 
 
