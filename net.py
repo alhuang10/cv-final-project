@@ -355,6 +355,13 @@ if __name__=='__main__':
 
     sabrina = SabrinaNet()
 
+    use_cuda = torch.cuda.is_available()
+
+    if use_cuda:
+        print("Using CUDA")
+        sabrina.cuda()
+
+
     train_data_transform = Compose([
         Resize((256,256)),
         PILToTensor()
@@ -367,6 +374,8 @@ if __name__=='__main__':
     trainloader = torch.utils.data.DataLoader(train_images, batch_size=training_batch_size,shuffle=False, num_workers=4)
 
     print("Generating weight vector")
+
+    optimizer = optim.SGD(sabrina.parameters(), lr=0.01, momentum=0.9, weight_decay=0.0001)
 
     cross_entropy_weight_vector = get_weight_vector()
     softmax = torch.nn.Softmax(dim=2)
@@ -387,9 +396,14 @@ if __name__=='__main__':
         output = output.view(training_batch_size,310,256*256).permute(0,2,1)
         ground_truth_encodings = ground_truth_encodings.view(training_batch_size,310,256*256).permute(0,2,1)
 
+        optimizer.zero_grad()
+
         output = softmax(output)
 
         loss = bce(output, ground_truth_encodings)
+        loss.backward()
+
+        optimizer.step()
 
 
 
