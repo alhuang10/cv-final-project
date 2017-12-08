@@ -204,25 +204,28 @@ def bin_prestige():
         pickle.dump(bin_counts, handle)
 
 def nn_prestige():
-    d = np.linalg.norm()
     nn = {}
     for (a,b) in [(i,j) for i in range(256) for j in range(256)]:
         nearest_bin = (round(a,-1),round(b,-1))
         if not nearest_bin in ab2bin: # this ab value is not in-gamut for the dataset, so no need to compute nn
             continue
-        nn_ab = [nearest_bin] # closest neighbor is its bin
-        i = 1
-        while len(neighbors) > 5:
-            valid_neighbors = []
-            for x,y in [(nearest_bin[0]+10*i,nearest_bin[1]+10*j) for i in (-1,0,1) for j in (-1,0,1) if i != 0 or j != 0]:
-                if (x,y) in ab2bin:
-                    valid_neighbors.append((x,y))
-            distances = [((x,y), np.linalg.norm([a-x,b-y])) for (x,y) in valid_neighbors]
-            distances.sort(key=lambda x:x[1])
-            nn_ab.append([x[0] for x in distances][:5])
-            i += 1
+        neighbors_ab = [nearest_bin] # closest neighbor is its bin
+        d = 1
+        while len(neighbors_ab) > 5:
+            valid_neighbors_d = []
+            valid_neighbors_d.extend([(10*d,10*a) for a in range(-d,d+1)])
+            valid_neighbors_d.extend([(-10*d,10*a) for a in range(-d,d+1)])
+            valid_neighbors_d.extend([(10*a,10*d) for a in range(-d,d+1)])
+            valid_neighbors_d.extend([(10*a,-10*d) for a in range(-d,d+1)])
 
-        nn[(a,b)] = nn_ab
+            valid_neighbors_d = [(x,y) for (x,y) in valid_neighbors_d if (x,y) in ab2bin]
+
+            distances = [((x,y), np.linalg.norm([a-x,b-y])) for (x,y) in valid_neighbors_d]
+            distances.sort(key=lambda x:x[1])
+            neighbors_ab.extend([x[0] for x in distances][:min(5-len(neighbors_ab),5)]) # take the bin locs with the smallest dists
+            d += 1
+
+        nn[(a,b)] = neighbors_ab
 
     with open('nearest_neighbors.p', 'wb') as handle:
         pickle.dump(nn, handle)
