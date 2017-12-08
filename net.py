@@ -30,6 +30,9 @@ with open('bin_counts.p', 'rb') as f:
     bin_counts = pickle.load(f)
 with open('bin_probs.p', 'rb') as f:
     bin_probs = pickle.load(f)
+with open('block_to_q_vector_mapping.p', 'rb') as f:
+    block_to_q_vector_mapping = pickle.load(f)
+
 
 def pil_to_tensor(pic):
     """Convert a ``PIL Image`` or ``numpy.ndarray`` to tensor.
@@ -128,8 +131,9 @@ class ImageNet(Dataset):
         for i in range(256):
             for j in range(256):
 
-                output_vector = test_func(ab_portion_image[0,i,j], ab_portion_image[1,i,j], ab2bin)
-                ground_truth_encoding[:, i, j] = output_vector
+                a = ab_portion_image[0,i,j]
+                b = ab_portion_image[1,i,j]
+                ground_truth_encoding[:, i, j] = block_to_q_vector_mapping[(a,b)]
 
 
         ground_truth_encoding = torch.FloatTensor(ground_truth_encoding)
@@ -172,6 +176,18 @@ def test_func(a, b, ab2bin):
 
 v_test_func = np.vectorize(test_func)
 
+
+
+def find_block_to_output_vector_mapping():
+    block_to_output_vector_mapping = {}
+
+    for a in range(256):
+        for b in range(256):
+            print(a,b)
+
+            block_to_output_vector_mapping[(a,b)] = test_func(a,b,ab2bin)
+
+    ipdb.set_trace()
 
 def bin_prestige():
 
@@ -394,11 +410,8 @@ if __name__=='__main__':
 
     print("here")
 
-    current_time = time.time()
-
     for i, data in enumerate(trainloader):
 
-        print(time.time() - current_time)
         print(i)
 
         lightness_images, ground_truth_encodings = data
