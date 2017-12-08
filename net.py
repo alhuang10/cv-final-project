@@ -450,7 +450,7 @@ if __name__=='__main__':
 
         optimizer.step()
 
-        torch.save(sabrina.state_dict(), "sabrina_model_weights_{num}".format(num=i))
+        # torch.save(sabrina.state_dict(), "sabrina_model_weights_{num}".format(num=i))
 
 
 
