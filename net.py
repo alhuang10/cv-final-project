@@ -15,6 +15,7 @@ import pickle
 import ipdb
 import traceback
 
+import scipy.sparse
 import math
 import os
 from PIL import Image, ImageCms
@@ -26,6 +27,8 @@ from wideresnet import WideResNet
 
 with open('ab2bin.p', 'rb') as f:
     ab2bin = pickle.load(f)
+with open('bin2ab.p', 'rb') as f:
+    bin2ab = pickle.load(f)
 with open('bin_counts.p', 'rb') as f:
     bin_counts = pickle.load(f)
 with open('bin_probs.p', 'rb') as f:
@@ -113,6 +116,7 @@ class ImageNet(Dataset):
     def __getitem__(self, idx):
 
         image_path = self.image_paths[idx]
+
         image = Image.open(image_path)
         image = image.convert(mode='RGB')
 
@@ -128,6 +132,7 @@ class ImageNet(Dataset):
 
         ground_truth_encoding = np.zeros([310, 256, 256])
 
+
         for i in range(256):
             for j in range(256):
 
@@ -135,10 +140,31 @@ class ImageNet(Dataset):
                 b = ab_portion_image[1,i,j]
                 ground_truth_encoding[:, i, j] = block_to_q_vector_mapping[(a,b)]
 
+        # Dumping to sparse
+
+        # ground_truth_encoding_2d = ground_truth_encoding.reshape(310,-1)
+        #
+        # sparse_ground_truth = scipy.sparse.csr_matrix(ground_truth_encoding_2d)
+        # sparse_ground_truth_filepath = "quantized_pickles/" + image_path.split('/')[-1] + '_quantized_ab.p'
+        #
+        # with open(sparse_ground_truth_filepath, 'wb') as fi:
+        #     pickle.dump(sparse_ground_truth, fi)
+
+
+        # Once all sparse pickles saved
+
+        # with open(sparse_ground_truth_filepath, 'rb') as fi:
+        #     sparse_ground_truth = pickle.load(fi)
+        #
+        # dense = sparse_ground_truth.todense()
+        # ground_truth_encoding = np.asarray(dense)
+        #
+        # ground_truth_encoding = ground_truth.reshape(310,256,256)
 
         ground_truth_encoding = torch.FloatTensor(ground_truth_encoding)
 
-        return lab_image[0,:,:].view(1,256,256), ground_truth_encoding  # just Lightness image and ground truth soft 5-hot encoding
+
+        return lab_image[0,:,:].view(1,256,256), ground_truth_encoding,image_path  # just Lightness image and ground truth soft 5-hot encoding
         # return np.asarray(lab_image)[:,:,0], np.asarray(lab_image)
 
 
@@ -280,14 +306,14 @@ def get_weight_vector():
 
 # for a given image, softmax predictions in Q -> bin numbers
 def get_annealed_means(z_hat, temp):
-    # softmax Q predictions given in h x w x Q numpy array
+    # softmax Q predictions given in Q x h x w numpy array
     Q = z_hat.shape[2]
     denom = np.sum(np.exp(np.log(z_hat)/temp),axis=2)
-    denom = np.dstack([denom] * Q) # repeat along third dimension 
+    denom = np.dstack([denom] * Q) # repeat along third dimension
     z_annealed = (np.exp(np.log(z_hat)/temp))/denom # still h x w x Q
 
     bins = list(ab2bin.values()) # vector of size Q
-    return np.rint(np.matmul(z_annealed,bins)) # take the mean, round to nearest bin 
+    return np.rint(np.matmul(z_annealed,bins)) # take the mean, round to nearest bin
 
 class SabrinaNet(nn.Module):
 
@@ -415,17 +441,19 @@ if __name__=='__main__':
         PILToTensor()
     ])
 
-    training_batch_size = 4
+    training_batch_size = 10
 
     print("Creating DataLoader")
 
     train_images = ImageNet("ILSVRC2012_img_val/", transform=train_data_transform)
+    x = train_images[0]
+
     # train_images = ImageNet("bin_test/", transform=train_data_transform)
-    trainloader = torch.utils.data.DataLoader(train_images, batch_size=training_batch_size,shuffle=False, num_workers=2)
+    trainloader = torch.utils.data.DataLoader(train_images, batch_size=training_batch_size,shuffle=True, num_workers=4)
 
     print("Generating weight vector")
 
-    optimizer = optim.SGD(sabrina.parameters(), lr=0.01, momentum=0.9, weight_decay=0.0001)
+    optimizer = optim.SGD(sabrina.parameters(), lr=0.001, momentum=0.9, weight_decay=0.0001)
 
     cross_entropy_weight_vector = get_weight_vector()
     cross_entropy_weight_vector = torch.Tensor(cross_entropy_weight_vector)
@@ -433,44 +461,68 @@ if __name__=='__main__':
     if use_cuda:
         cross_entropy_weight_vector = cross_entropy_weight_vector.cuda()
 
-    softmax = torch.nn.Softmax(dim=2)
-    bce = torch.nn.BCELoss(weight=cross_entropy_weight_vector)
+    # softmax = torch.nn.Softmax(dim=2)
+    # bce = torch.nn.BCELoss(weight=cross_entropy_weight_vector)
+    bce = torch.nn.BCEWithLogitsLoss(weight=cross_entropy_weight_vector)
+
 
     print("here")
 
-    for i, data in enumerate(trainloader):
+    epochs = 50
 
-        print(i)
+    for epoch in range(epochs):
 
-        lightness_images, ground_truth_encodings = data
+        running_loss = 0
+        current_time = time.time()
 
-        if use_cuda:
-            lightness_images, ground_truth_encodings \
-                = Variable(lightness_images.cuda()), Variable(ground_truth_encodings.cuda())
-        else:
-            lightness_images, ground_truth_encodings = Variable(lightness_images), Variable(ground_truth_encodings)
+        print("Epoch:", epoch)
 
-        output = sabrina(lightness_images)
+        for i, data in enumerate(trainloader):
 
-        output = output.view(training_batch_size,310,256*256).permute(0,2,1)
-        ground_truth_encodings = ground_truth_encodings.view(training_batch_size,310,256*256).permute(0,2,1)
+            if i % 10 == 0:
+                print(i)
+                time_to_run = time.time() - current_time
+                current_time = time.time()
+                print("Training:", i, time_to_run)
 
-        optimizer.zero_grad()
+            lightness_images, ground_truth_encodings, _ = data
 
-        output = softmax(output)
+            if use_cuda:
+                lightness_images, ground_truth_encodings \
+                    = Variable(lightness_images.cuda()), Variable(ground_truth_encodings.cuda())
+            else:
+                lightness_images, ground_truth_encodings = Variable(lightness_images), Variable(ground_truth_encodings)
 
-        loss = bce(output, ground_truth_encodings)
-        loss.backward()
-
-        print(loss)
-
-        optimizer.step()
-
-        # torch.save(sabrina.state_dict(), "sabrina_model_weights_{num}".format(num=i))
+            output = sabrina(lightness_images)
+            # size: [batch_size, 310, 256, 256)
 
 
+            output = output.permute(0,2,3,1)
+            ground_truth_encodings = ground_truth_encodings.permute(0,2,3,1)
 
+            # Turning it into form usable for binary cross entropy, [batch_size, 256*256, 310]
+            # output = output.view(training_batch_size,310,256*256).permute(0,2,1)
+            # ground_truth_encodings = ground_truth_encodings.view(training_batch_size,310,256*256).permute(0,2,1)
 
+            optimizer.zero_grad()
 
+            # output = softmax(output)
+            loss = bce(output, ground_truth_encodings)
+            loss.backward()
 
+            loss_amt = loss.cpu().data.numpy()[0]
+
+            # print(loss_amt)
+
+            running_loss += loss_amt
+
+            optimizer.step()
+
+            if i % 25 == 0:
+                print('[%d, %5d] average loss: %.3f' %
+                      (epoch + 1, i, running_loss / 25))
+                running_loss = 0.0
+
+            if i % 50 == 0:
+                torch.save(sabrina.state_dict(), "model_weights/sabrina_model_weights_epoch_{num}_i_{count}".format(num=epoch, count=i))
 
