@@ -34,7 +34,7 @@ lab_profile = ImageCms.createProfile("LAB", colorTemp=6500)
 
 lab2rgb_transform = ImageCms.buildTransformFromOpenProfiles(lab_profile, srgb_profile, "LAB",
                                                                  "RGB")
-
+softmax = torch.nn.Softmax(dim=3)
 
 for i, data in enumerate(trainloader):
     lightness_image, ground_truth_encoding, image_path = data
@@ -50,9 +50,19 @@ for i, data in enumerate(trainloader):
     output = sabrina(lightness_image)
 
     output = output.permute(0,2,3,1)
-    m = nn.Sigmoid()
-    output = torch.squeeze(m(output).data).cpu().numpy()
-    output_bins = get_annealed_means(output,TEMPERATURE)
+
+    output = softmax(output)
+
+
+
+    output = torch.squeeze(output.data).cpu().numpy()
+
+    # ipdb.set_trace()
+    #
+    # output_bins = get_annealed_means(output,TEMPERATURE)
+
+    # mode
+    output_bins = np.argmax(output, axis=2)
 
     L = torch.squeeze(lightness_image.data).cpu().numpy()
     colorized = np.zeros((256,256,3))
