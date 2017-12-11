@@ -125,7 +125,7 @@ class MultinomialCrossEntropy(torch.nn.Module):
 
         # print("torch.sum(weighted_losses))
 
-        return torch.sum(weighted_losses)*-1
+        return ((torch.sum(weighted_losses)*-1)/65536)/16
 
 
 class ImageNet(Dataset):
@@ -189,21 +189,25 @@ class ImageNet(Dataset):
         # ground_truth_encoding_2d = ground_truth_encoding.reshape(310,-1)
         #
         # sparse_ground_truth = scipy.sparse.csr_matrix(ground_truth_encoding_2d)
-        # sparse_ground_truth_filepath = "quantized_pickles/" + image_path.split('/')[-1] + '_quantized_ab.p'
-        #
+        
+
+        sparse_ground_truth_filepath = "quantized_pickles/" + image_path.split('/')[-1] + '_quantized_ab.p'
+        
+
+
         # with open(sparse_ground_truth_filepath, 'wb') as fi:
         #     pickle.dump(sparse_ground_truth, fi)
 
 
         # Once all sparse pickles saved
 
-        # with open(sparse_ground_truth_filepath, 'rb') as fi:
-        #     sparse_ground_truth = pickle.load(fi)
-        #
-        # dense = sparse_ground_truth.todense()
-        # ground_truth_encoding = np.asarray(dense)
-        #
-        # ground_truth_encoding = ground_truth.reshape(310,256,256)
+        with open(sparse_ground_truth_filepath, 'rb') as fi:
+            sparse_ground_truth = pickle.load(fi)
+        
+        dense = sparse_ground_truth.todense()
+        ground_truth_encoding = np.asarray(dense)
+       
+        ground_truth_encoding = ground_truth_encoding.reshape(310,256,256)
 
 
         ground_truth_encoding = torch.FloatTensor(ground_truth_encoding)
@@ -491,7 +495,7 @@ if __name__=='__main__':
         PILToTensor()
     ])
 
-    training_batch_size = 2
+    training_batch_size = 16
 
     print("Creating DataLoader")
 
@@ -499,11 +503,11 @@ if __name__=='__main__':
     x = train_images[0]
 
     # train_images = ImageNet("bin_test/", transform=train_data_transform)
-    trainloader = torch.utils.data.DataLoader(train_images, batch_size=training_batch_size,shuffle=True, num_workers=4)
+    trainloader = torch.utils.data.DataLoader(train_images, batch_size=training_batch_size,shuffle=True, num_workers=15)
 
     print("Generating weight vector")
 
-    optimizer = optim.SGD(sabrina.parameters(), lr=0.000001, momentum=0.9, weight_decay=0.0001)
+    optimizer = optim.SGD(sabrina.parameters(), lr=0.001, momentum=0.9)
 
     log_softmax = torch.nn.LogSoftmax(dim=1)
 
@@ -522,11 +526,11 @@ if __name__=='__main__':
 
         for i, data in enumerate(trainloader):
 
-            if i % 10 == 0:
-                print(i)
-                time_to_run = time.time() - current_time
-                current_time = time.time()
-                print("Training:", i, time_to_run)
+            #if i % 10 == 0:
+            #    print(i)
+            #    time_to_run = time.time() - current_time
+            #    current_time = time.time()
+            #    print("Training:", i, time_to_run)
 
             lightness_images, ground_truth_encodings, ground_truth_weights, _ = data
 
@@ -549,17 +553,17 @@ if __name__=='__main__':
 
             loss_amt = loss.cpu().data.numpy()[0]
 
-            # print("Loss amount:", loss_amt)
+            #print("Loss amount:", loss_amt)
 
             running_loss += loss_amt
 
             optimizer.step()
 
-            if i % 25 == 0:
+            if i % 100 == 0:
                 print('[%d, %5d] average loss: %.3f' %
-                      (epoch + 1, i, running_loss / 25))
+                      (epoch + 1, i, running_loss / 100))
                 running_loss = 0.0
 
             if i % 50 == 0:
-                torch.save(sabrina.state_dict(), "model_weights/sabrina_model_weights_epoch_{num}_i_{count}".format(num=epoch, count=i))
+                torch.save(sabrina.state_dict(), "model_weights_gpu_2/sabrina_model_weights_epoch_{num}_i_{count}".format(num=epoch, count=i))
 

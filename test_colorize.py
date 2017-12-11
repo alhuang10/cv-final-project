@@ -37,7 +37,7 @@ lab2rgb_transform = ImageCms.buildTransformFromOpenProfiles(lab_profile, srgb_pr
 softmax = torch.nn.Softmax(dim=3)
 
 for i, data in enumerate(trainloader):
-    lightness_image, ground_truth_encoding, image_path = data
+    lightness_image, ground_truth_encoding, _, image_path = data
 
     print(image_path)
 
@@ -58,11 +58,11 @@ for i, data in enumerate(trainloader):
     output = torch.squeeze(output.data).cpu().numpy()
 
     # ipdb.set_trace()
-    #
-    # output_bins = get_annealed_means(output,TEMPERATURE)
+   
+    output_bins = get_annealed_means(output,TEMPERATURE)
 
     # mode
-    output_bins = np.argmax(output, axis=2)
+    # output_bins = np.argmax(output, axis=2)
 
     L = torch.squeeze(lightness_image.data).cpu().numpy()
     colorized = np.zeros((256,256,3))
