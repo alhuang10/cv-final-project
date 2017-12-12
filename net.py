@@ -395,44 +395,7 @@ class SabrinaNet(nn.Module):
             nn.BatchNorm2d(128)
         )
         self.conv3 = nn.Sequential(
-            nn.Conv2d(128, 256, kernel_size=4, stride=2, padding=1),  # downsample, 32 by 32
-            nn.ReLU(inplace=True),
-            nn.Conv2d(256, 256, kernel_size=3, stride=1, padding=1),
-            nn.ReLU(inplace=True),
-            nn.BatchNorm2d(256)
-        )
-        self.conv4 = nn.Sequential(
-            nn.Conv2d(256, 512, kernel_size=3, stride=1, padding=1),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(512, 512, kernel_size=3, stride=1, padding=1),
-            nn.ReLU(inplace=True),
-            nn.BatchNorm2d(512)
-        )
-        self.conv5 = nn.Sequential(
-            nn.Conv2d(512, 512, kernel_size=3, stride=1, padding=2, dilation=2),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(512, 512, kernel_size=3, stride=1, padding=2, dilation=2),
-            nn.ReLU(inplace=True),
-            nn.BatchNorm2d(512)
-        )
-        self.conv6 = nn.Sequential(
-            nn.Conv2d(512, 512, kernel_size=3, stride=1, padding=2, dilation=2),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(512, 512, kernel_size=3, stride=1, padding=2, dilation=2),
-            nn.ReLU(inplace=True),
-            nn.BatchNorm2d(512)
-        )
-        self.conv7 = nn.Sequential(
-            nn.Conv2d(512, 512, kernel_size=3, stride=1, padding=1),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(512, 512, kernel_size=3, stride=1, padding=1),
-            nn.ReLU(inplace=True),
-            nn.BatchNorm2d(512)
-        )
-        self.conv7 = nn.Sequential(
-            nn.ConvTranspose2d(512, 256, kernel_size=4, stride=2, padding=1), # upsample, 64 by 64
-            nn.ReLU(inplace=True),
-            nn.Conv2d(256, 256, kernel_size=3, stride=1, padding=1),
+            nn.Conv2d(128, 256, kernel_size=3, stride=1, padding=1),
             nn.ReLU(inplace=True),
             nn.BatchNorm2d(256)
         )
@@ -445,26 +408,11 @@ class SabrinaNet(nn.Module):
             nn.ConvTranspose2d(310, 310, kernel_size=4, stride=2, padding=1)  # upsample 256 by 256
         )
 
-
-        self.conv_layers = nn.Sequential(
-            self.conv1,
-            self.conv2,
-            self.conv3,
-            self.conv4,
-            self.conv5,
-            self.conv6,
-            self.conv7
-        )
-
     def forward(self, x):
 
         x = self.conv1(x)
         x = self.conv2(x)
         x = self.conv3(x)
-        x = self.conv4(x)
-        x = self.conv5(x)
-        x = self.conv6(x)
-        x = self.conv7(x)
         x = self.conv8(x)
         x = self.conv9(x)
 
@@ -495,7 +443,7 @@ if __name__=='__main__':
         PILToTensor()
     ])
 
-    training_batch_size = 16
+    training_batch_size = 24
 
     print("Creating DataLoader")
 
@@ -503,11 +451,11 @@ if __name__=='__main__':
     x = train_images[0]
 
     # train_images = ImageNet("bin_test/", transform=train_data_transform)
-    trainloader = torch.utils.data.DataLoader(train_images, batch_size=training_batch_size,shuffle=True, num_workers=15)
+    trainloader = torch.utils.data.DataLoader(train_images, batch_size=training_batch_size,shuffle=True, num_workers=8)
 
     print("Generating weight vector")
 
-    optimizer = optim.SGD(sabrina.parameters(), lr=0.001, momentum=0.9)
+    optimizer = optim.SGD(sabrina.parameters(), lr=0.01, momentum=0.9)
 
     log_softmax = torch.nn.LogSoftmax(dim=1)
 
@@ -541,29 +489,30 @@ if __name__=='__main__':
                 lightness_images, ground_truth_encodings, ground_truth_weights \
                     = Variable(lightness_images), Variable(ground_truth_encodings), Variable(ground_truth_weights)
 
+            optimizer.zero_grad()
+
             output = sabrina(lightness_images)
-            # size: [batch_size, 310, 256, 256)
 
             output = log_softmax(output)
-
-            optimizer.zero_grad()
 
             loss = mult_ce(output, ground_truth_encodings, ground_truth_weights)
             loss.backward()
 
             loss_amt = loss.cpu().data.numpy()[0]
 
-            #print("Loss amount:", loss_amt)
-
             running_loss += loss_amt
 
             optimizer.step()
 
-            if i % 100 == 0:
+            if i % 10 == 0:
                 print('[%d, %5d] average loss: %.3f' %
-                      (epoch + 1, i, running_loss / 100))
+                      (epoch + 1, i, running_loss / 10))
                 running_loss = 0.0
 
+                time_to_run = time.time() - current_time
+                current_time = time.time()
+                print(i, time_to_run)
+
             if i % 50 == 0:
-                torch.save(sabrina.state_dict(), "model_weights_gpu_2/sabrina_model_weights_epoch_{num}_i_{count}".format(num=epoch, count=i))
+                torch.save(sabrina.state_dict(), "model_weights_gpu_1/sabrina_model_weights_epoch_{num}_i_{count}".format(num=epoch, count=i))
 
