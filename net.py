@@ -125,7 +125,7 @@ class MultinomialCrossEntropy(torch.nn.Module):
 
         # print("torch.sum(weighted_losses))
 
-        return ((torch.sum(weighted_losses)*-1)/65536)/16
+        return ((torch.sum(weighted_losses)*-1)/65536)/(int(log_image_output.shape[0]))
 
 
 class ImageNet(Dataset):
@@ -481,13 +481,16 @@ def train_sabrina(sabrina, epochs, cuda_available):
 
 if __name__=='__main__':
 
-    sabrina = SabrinaNet()
+    # sabrina = SabrinaNet()
+
+    wide_sabrina = WideResNet(depth=15, widen_factor=2, dropRate=0.2)
 
     use_cuda = torch.cuda.is_available()
 
     if use_cuda:
         print("Using CUDA")
-        sabrina.cuda()
+        # sabrina.cuda()
+        wide_sabrina.cuda()
 
 
     train_data_transform = Compose([
@@ -495,7 +498,7 @@ if __name__=='__main__':
         PILToTensor()
     ])
 
-    training_batch_size = 16
+    training_batch_size = 4
 
     print("Creating DataLoader")
 
@@ -507,7 +510,8 @@ if __name__=='__main__':
 
     print("Generating weight vector")
 
-    optimizer = optim.SGD(sabrina.parameters(), lr=0.001, momentum=0.9)
+    # optimizer = optim.SGD(sabrina.parameters(), lr=0.01, momentum=0.9)
+    optimizer = optim.SGD(wide_sabrina.parameters(), lr=0.01, momentum=0.9)
 
     log_softmax = torch.nn.LogSoftmax(dim=1)
 
@@ -526,12 +530,6 @@ if __name__=='__main__':
 
         for i, data in enumerate(trainloader):
 
-            #if i % 10 == 0:
-            #    print(i)
-            #    time_to_run = time.time() - current_time
-            #    current_time = time.time()
-            #    print("Training:", i, time_to_run)
-
             lightness_images, ground_truth_encodings, ground_truth_weights, _ = data
 
             if use_cuda:
@@ -541,7 +539,8 @@ if __name__=='__main__':
                 lightness_images, ground_truth_encodings, ground_truth_weights \
                     = Variable(lightness_images), Variable(ground_truth_encodings), Variable(ground_truth_weights)
 
-            output = sabrina(lightness_images)
+            output = wide_sabrina(lightness_images)
+            # output = sabrina(lightness_images)
             # size: [batch_size, 310, 256, 256)
 
             output = log_softmax(output)
@@ -559,11 +558,16 @@ if __name__=='__main__':
 
             optimizer.step()
 
-            if i % 100 == 0:
+            if i % 10 == 0:
                 print('[%d, %5d] average loss: %.3f' %
-                      (epoch + 1, i, running_loss / 100))
+                      (epoch + 1, i, running_loss / 10))
                 running_loss = 0.0
+                time_to_run = time.time() - current_time
+                current_time = time.time()
+                print(i, time_to_run)
+
 
             if i % 50 == 0:
-                torch.save(sabrina.state_dict(), "model_weights_gpu_2/sabrina_model_weights_epoch_{num}_i_{count}".format(num=epoch, count=i))
+                # torch.save(sabrina.state_dict(), "model_weights_gpu_4/sabrina_model_weights_epoch_{num}_i_{count}".format(num=epoch, count=i))
+                torch.save(wide_sabrina.state_dict(), "model_weights_gpu_4/wide_sabrina_model_weights_epoch_{num}_i_{count}".format(num=epoch, count=i))
 

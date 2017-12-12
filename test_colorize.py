@@ -5,7 +5,7 @@ import sys
 
 WEIGHT_PATH = sys.argv[1]
 NUM_IMAGES = 20
-TEMPERATURE = 0.38
+TEMPERATURE = 0.80
 
 sabrina = SabrinaNet()
 
@@ -26,7 +26,7 @@ with open('bin2ab.p','wb') as f:
 
 print("Creating DataLoader")
 
-train_images = ImageNet("ILSVRC2012_img_val/", transform=train_data_transform)
+train_images = ImageNet("single_image/", transform=train_data_transform)
 trainloader = torch.utils.data.DataLoader(train_images, batch_size=1, shuffle=True, num_workers=3)
 
 srgb_profile = ImageCms.createProfile("sRGB")

@@ -4,7 +4,7 @@ import math
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-
+import ipdb
 
 class BasicBlock(nn.Module):
     def __init__(self, in_planes, out_planes, stride, dropRate=0.0):
@@ -51,11 +51,11 @@ class NetworkBlock(nn.Module):
 
 
 class WideResNet(nn.Module):
-    def __init__(self, depth, num_classes, widen_factor=1, dropRate=0.0):
+    def __init__(self, depth, widen_factor=1, dropRate=0.0):
         super(WideResNet, self).__init__()
-        nChannels = [16, 16*widen_factor, 32*widen_factor, 64*widen_factor, 128*widen_factor, 256*widen_factor]
+        nChannels = [16, 16*widen_factor, 32*widen_factor, 64*widen_factor]
 
-        num_blocks = 5
+        num_blocks = 3
         layers_per_block = 2
 
         assert((depth - 3) % (num_blocks*layers_per_block) == 0)
@@ -64,22 +64,21 @@ class WideResNet(nn.Module):
         block = BasicBlock
 
         # 1st conv before any network block
-        self.conv1 = nn.Conv2d(3, nChannels[0], kernel_size=3, stride=1,
+        self.conv1 = nn.Conv2d(1, nChannels[0], kernel_size=3, stride=1,
                                padding=1, bias=False)
 
         # 1st block, no downsampling
         self.block1 = NetworkBlock(n, nChannels[0], nChannels[1], block, 1, dropRate)
         # Downsampling blocks (stride 2)
-        self.block2 = NetworkBlock(n, nChannels[1], nChannels[2], block, 2, dropRate)
-        self.block3 = NetworkBlock(n, nChannels[2], nChannels[3], block, 2, dropRate)
-        self.block4 = NetworkBlock(n, nChannels[3], nChannels[4], block, 2, dropRate)
-        self.block5 = NetworkBlock(n, nChannels[4], nChannels[5], block, 2, dropRate)
+        self.block2 = NetworkBlock(n, nChannels[1], nChannels[2], block, 1, dropRate)
+        self.block3 = NetworkBlock(n, nChannels[2], nChannels[3], block, 1, dropRate)
+
+        self.block4 = NetworkBlock(n, nChannels[3], 310, block, 1, dropRate)
 
         # global average pooling and classifier
-        self.bn1 = nn.BatchNorm2d(nChannels[5])
+        self.bn1 = nn.BatchNorm2d(nChannels[3])
         self.relu = nn.ReLU(inplace=True)
-        self.fc = nn.Linear(nChannels[5], num_classes)
-        self.nChannels = nChannels[5]
+        self.nChannels = nChannels[3]
 
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
@@ -98,9 +97,6 @@ class WideResNet(nn.Module):
         out = self.block2(out)
         out = self.block3(out)
         out = self.block4(out)
-        out = self.block5(out)
 
-        out = self.relu(self.bn1(out))
-        out = F.avg_pool2d(out, 7)
-        out = out.view(-1, self.nChannels)
-        return self.fc(out)
+        # return self.fc(out)
+        return out
